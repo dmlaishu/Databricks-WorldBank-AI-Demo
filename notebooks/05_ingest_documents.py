@@ -1,45 +1,64 @@
 # Databricks notebook source
-# Demo ingestion for unstructured World Bank report text.
-# In production, populate report_text from approved World Bank report files/URLs.
+# Ingest unstructured World Bank indicator metadata as trusted public text.
+# This keeps the demo fully reproducible without bundling copyrighted reports.
 
-from pyspark.sql import Row
+import requests
+from datetime import datetime, timezone
 from pyspark.sql import functions as F
 from pyspark.sql.types import ArrayType, StringType
 
 CATALOG = "world_bank_ai"
+INDICATORS = [
+    "NY.GDP.MKTP.KD.ZG",
+    "SP.POP.TOTL",
+    "SL.UEM.TOTL.ZS",
+    "FP.CPI.TOTL.ZG",
+]
 
-spark.sql(f"""
-CREATE TABLE IF NOT EXISTS {CATALOG}.bronze.documents_raw (
-  document_id STRING,
-  title STRING,
-  source_url STRING,
-  report_text STRING,
-  ingested_at TIMESTAMP
-) USING DELTA
-""")
+rows = []
+for indicator in INDICATORS:
+    url = f"https://api.worldbank.org/v2/indicator/{indicator}?format=json"
+    response = requests.get(url, timeout=30)
+    response.raise_for_status()
+    payload = response.json()
+    item = payload[1][0]
+    text = "\n\n".join([
+        f"Indicator: {item.get('name', indicator)}",
+        f"Definition and methodology: {item.get('sourceNote') or ''}",
+        f"Source organization: {item.get('sourceOrganization') or ''}",
+    ]).strip()
+    rows.append({
+        "document_id": indicator,
+        "title": f"World Bank indicator metadata — {item.get('name', indicator)}",
+        "source_url": url,
+        "report_text": text,
+        "ingested_at": datetime.now(timezone.utc),
+    })
 
-# Simple deterministic chunker for demo purposes.
+docs = spark.createDataFrame(rows)
+(docs.write.format("delta")
+ .mode("overwrite")
+ .option("overwriteSchema", "true")
+ .saveAsTable(f"{CATALOG}.bronze.documents_raw"))
+
 @F.udf(ArrayType(StringType()))
 def chunk_text(text):
     if not text:
         return []
     words = text.split()
-    size, overlap = 350, 50
+    size, overlap = 250, 40
     chunks, start = [], 0
     while start < len(words):
         chunks.append(" ".join(words[start:start + size]))
-        start += size - overlap
+        start += max(1, size - overlap)
     return chunks
 
-docs = spark.table(f"{CATALOG}.bronze.documents_raw")
-
 chunks = (
-    docs
-    .withColumn("chunks", chunk_text("report_text"))
-    .select(
-        "document_id", "title", "source_url",
-        F.posexplode("chunks").alias("chunk_id", "chunk_text")
-    )
+    docs.withColumn("chunks", chunk_text("report_text"))
+        .select(
+            "document_id", "title", "source_url",
+            F.posexplode("chunks").alias("chunk_id", "chunk_text")
+        )
 )
 
 (chunks.write.format("delta")
@@ -47,8 +66,4 @@ chunks = (
  .option("overwriteSchema", "true")
  .saveAsTable(f"{CATALOG}.silver.document_chunks"))
 
-display(chunks.limit(20))
-
-# Next workspace step:
-# Create a Databricks Vector Search index over silver.document_chunks.
-# Configure the embedding endpoint/index name in src/rag_agent.py.
+display(chunks)
