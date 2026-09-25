@@ -1,0 +1,8 @@
+command: ["python", "app.py"]
+env:
+  - name: CATALOG
+    value: "world_bank_ai"
+  - name: SQL_WAREHOUSE_ID
+    valueFrom: "sql-warehouse"
+  - name: AGENT_ENDPOINT
+    valueFrom: "agent-endpoint"
