@@ -1,8 +1,8 @@
-command: ["python", "app.py"]
+command: ["streamlit", "run", "app.py"]
 env:
   - name: CATALOG
     value: "world_bank_ai"
   - name: SQL_WAREHOUSE_ID
     valueFrom: "sql-warehouse"
-  - name: AGENT_ENDPOINT
-    valueFrom: "agent-endpoint"
+  - name: VECTOR_INDEX
+    value: "world_bank_ai.silver.world_bank_document_index"
