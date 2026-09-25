@@ -1,23 +1,34 @@
 import os
+from databricks.ai_search.client import AISearchClient
 
-VECTOR_SEARCH_ENDPOINT = os.getenv("VECTOR_SEARCH_ENDPOINT", "")
 VECTOR_INDEX = os.getenv(
     "VECTOR_INDEX",
     "world_bank_ai.silver.world_bank_document_index",
 )
 
+_client = None
+_index = None
+
+def _get_index():
+    global _client, _index
+    if _index is None:
+        _client = AISearchClient()
+        _index = _client.get_index(index_name=VECTOR_INDEX)
+    return _index
+
 def retrieve_context(question: str, k: int = 5):
-    """
-    Workspace integration point.
+    """Retrieve governed World Bank report chunks from Databricks AI Search."""
+    index = _get_index()
+    results = index.similarity_search(
+        query_text=question,
+        columns=["document_id", "title", "source_url", "chunk_id", "chunk_text"],
+        num_results=k,
+        query_type="hybrid",
+    )
 
-    Configure a Databricks Vector Search endpoint/index over
-    world_bank_ai.silver.document_chunks, then call similarity search here.
-
-    Keeping this adapter isolated makes the interview demo easy to explain:
-    ingestion/chunking -> governed Delta table -> vector index -> retrieved
-    report context -> LLM answer with source URLs.
-    """
-    if not VECTOR_SEARCH_ENDPOINT:
-        raise RuntimeError("VECTOR_SEARCH_ENDPOINT is not configured")
-    # Add workspace-specific Vector Search client call after index creation.
-    raise NotImplementedError("Configure the workspace Vector Search index first")
+    columns = [c["name"] for c in results["manifest"]["columns"]]
+    docs = []
+    for row in results["result"]["data_array"]:
+        item = dict(zip(columns, row[:len(columns)]))
+        docs.append(item)
+    return docs
