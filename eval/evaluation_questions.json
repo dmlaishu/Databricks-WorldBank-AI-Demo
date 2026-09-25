@@ -1,0 +1,17 @@
+[
+  {
+    "question": "Show India's GDP growth over the last five years.",
+    "expected_route": "sql",
+    "expected_indicator": "NY.GDP.MKTP.KD.ZG"
+  },
+  {
+    "question": "Explain what the World Bank GDP growth indicator measures.",
+    "expected_route": "rag",
+    "expected_indicator": "NY.GDP.MKTP.KD.ZG"
+  },
+  {
+    "question": "Compare India's recent GDP growth with how the World Bank defines and sources this indicator.",
+    "expected_route": "hybrid",
+    "expected_indicator": "NY.GDP.MKTP.KD.ZG"
+  }
+]
