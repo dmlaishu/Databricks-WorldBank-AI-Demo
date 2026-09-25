@@ -1,0 +1,35 @@
+bundle:
+  name: world-bank-ai-demo
+
+variables:
+  catalog:
+    default: world_bank_ai
+
+resources:
+  jobs:
+    world_bank_pipeline:
+      name: world-bank-ai-pipeline
+      tasks:
+        - task_key: ingest
+          notebook_task:
+            notebook_path: ./notebooks/02_ingest_worldbank.py
+        - task_key: transform
+          depends_on:
+            - task_key: ingest
+          notebook_task:
+            notebook_path: ./notebooks/03_bronze_to_silver.py
+        - task_key: gold
+          depends_on:
+            - task_key: transform
+          notebook_task:
+            notebook_path: ./notebooks/04_build_gold.py
+        - task_key: evaluate
+          depends_on:
+            - task_key: gold
+          notebook_task:
+            notebook_path: ./notebooks/06_evaluation.py
+
+targets:
+  dev:
+    default: true
+    mode: development
