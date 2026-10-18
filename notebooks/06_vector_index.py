@@ -81,6 +81,17 @@ def index_state():
 
 existing_indexes = {i.name for i in w.vector_search_indexes.list_indexes(endpoint_name=VS_ENDPOINT)}
 
+# If the endpoint was removed (e.g. account credits ran out) the index can survive as an orphaned UC entity,
+# which blocks re-creating it on the new endpoint. Remove it first.
+if VS_INDEX not in existing_indexes:
+    try:
+        w.vector_search_indexes.get_index(VS_INDEX)
+        print("Found an orphaned index from a previous endpoint - deleting it before re-creating")
+        w.vector_search_indexes.delete_index(index_name=VS_INDEX)
+        time.sleep(60)
+    except Exception:
+        pass   # no leftover index
+
 if VS_INDEX not in existing_indexes:
     w.vector_search_indexes.create_index(
         name=VS_INDEX,
