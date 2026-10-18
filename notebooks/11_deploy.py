@@ -39,6 +39,9 @@ from databricks.sdk.service.serving import (
 ENDPOINT_NAME = "wb-demo-agent"
 SCALE_TO_ZERO = True          # False on demo day, so the first question is answered in seconds
 RATE_LIMIT_PER_USER_PER_MIN = 20
+# True → redeploy even if this version is already served. Needed after re-creating a declared resource
+# (e.g. the vector index): the endpoint's credentials are issued for the resources as they existed at deploy time.
+FORCE_REDEPLOY = False
 
 w = WorkspaceClient()
 mlflow.set_registry_uri("databricks-uc")
@@ -71,7 +74,7 @@ def served_versions(name: str) -> set[str]:
     except Exception:
         return set()
 
-if str(VERSION) in served_versions(ENDPOINT_NAME):
+if str(VERSION) in served_versions(ENDPOINT_NAME) and not FORCE_REDEPLOY:
     print(f"Endpoint already serves version {VERSION} - skipping deploy")
     deployment = next((d for d in agents.list_deployments() if d.endpoint_name == ENDPOINT_NAME), None)
 else:
