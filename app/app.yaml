@@ -1,0 +1,10 @@
+command: ["streamlit", "run", "app.py"]
+env:
+  - name: SERVING_ENDPOINT
+    valueFrom: serving-endpoint
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: sql-warehouse
+  - name: LOG_TABLE
+    value: wb_demo.ops.app_logs
+  - name: STREAMLIT_BROWSER_GATHER_USAGE_STATS
+    value: "false"
