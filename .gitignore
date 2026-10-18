@@ -1,7 +1,20 @@
-.env
-.env.local
-.databricks/
+# Personal presentation notes (kept local)
+docs/
+
+# Python
 __pycache__/
 *.pyc
+.venv/
+.ipynb_checkpoints/
+
+# Local MLflow runs and environment files
+mlruns/
+.env
+.env.*
+
+# OS / editor
 .DS_Store
-node_modules/
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
