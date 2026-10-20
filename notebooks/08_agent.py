@@ -107,8 +107,15 @@ print(os.getcwd(), agent_config)
 # MAGIC DATA_TOOLS = [f"{CATALOG}.ai.{n}" for n in ("list_indicators", "get_indicator", "compare_countries", "get_country_profile")]
 # MAGIC RESEARCH_TOOLS = [f"{CATALOG}.ai.search_reports"]
 # MAGIC
+# MAGIC VS_INDEX = f"{CATALOG}.ai.doc_chunks_index"
+# MAGIC
 # MAGIC MAX_TOOL_ROWS = 60
 # MAGIC MAX_PASSAGE_CHARS = 1500
+# MAGIC SEARCH_CANDIDATES, SEARCH_RESULTS = 60, 8
+# MAGIC SEARCH_COLUMNS = ["title", "country_name", "country_iso3", "region", "doc_year", "page_start", "page_end",
+# MAGIC                   "landing_url", "chunk_text"]
+# MAGIC COUNTRY_ALIASES = {"turkey": "TUR", "türkiye": "TUR", "turkiye": "TUR", "vietnam": "VNM", "egypt": "EGY",
+# MAGIC                    "usa": "USA", "us": "USA", "united states of america": "USA", "america": "USA"}
 # MAGIC
 # MAGIC # ── Prompts ─────────────────────────────────────────────────────────────────────────────────────
 # MAGIC
@@ -299,7 +306,10 @@ print(os.getcwd(), agent_config)
 # MAGIC             span.set_inputs(args)
 # MAGIC             try:
 # MAGIC                 tool = self.tools[tool_name]
-# MAGIC                 raw_rows = tool.run(self.w, args)
+# MAGIC                 # Report search goes straight to Vector Search through the SDK: that is the path covered by the
+# MAGIC                 # endpoint's credentials for the declared index. (The ai.search_reports SQL function stays the
+# MAGIC                 # same search for SQL users; its description and parameters still define the tool.)
+# MAGIC                 raw_rows = self._search_reports(args) if is_retriever else tool.run(self.w, args)
 # MAGIC                 rows = self._register_passages(raw_rows, ctx) if is_retriever else raw_rows
 # MAGIC                 ctx["tool_calls"].append({"agent": agent, "tool": tool.full_name, "args": args, "rows": len(rows)})
 # MAGIC                 if is_retriever:
@@ -314,6 +324,44 @@ print(os.getcwd(), agent_config)
 # MAGIC                 ctx["tool_calls"].append({"agent": agent, "tool": tool_name, "args": args, "error": str(e)[:300]})
 # MAGIC                 span.set_outputs({"error": str(e)})
 # MAGIC                 return f"Tool error: {str(e)[:300]}"
+# MAGIC
+# MAGIC     @staticmethod
+# MAGIC     def _matches_country(row: dict, country: str) -> bool:
+# MAGIC         """Same rules as the UC functions: ISO-3 exact, otherwise letters-only name/region prefix, plus aliases."""
+# MAGIC         def letters(s):
+# MAGIC             return re.sub(r"[^a-z]", "", (s or "").lower())
+# MAGIC         c = country.strip()
+# MAGIC         if (row.get("country_iso3") or "").upper() == c.upper():
+# MAGIC             return True
+# MAGIC         alias = COUNTRY_ALIASES.get(c.lower())
+# MAGIC         if alias and alias == row.get("country_iso3"):
+# MAGIC             return True
+# MAGIC         if len(c) <= 3:
+# MAGIC             return False
+# MAGIC         return any(letters(row.get(k)).startswith(letters(c)) for k in ("country_name", "region"))
+# MAGIC
+# MAGIC     def _search_reports(self, args: dict) -> list[dict]:
+# MAGIC         query = str(args.get("query") or "").strip()
+# MAGIC         country = str(args.get("country") or "").strip()
+# MAGIC         if country.lower() in ("null", "none"):
+# MAGIC             country = ""
+# MAGIC         kwargs = dict(index_name=VS_INDEX, columns=SEARCH_COLUMNS, num_results=SEARCH_CANDIDATES,
+# MAGIC                       query_text=f"{country}: {query}" if country else query)
+# MAGIC         try:
+# MAGIC             res = self.w.vector_search_indexes.query_index(**kwargs, query_type="HYBRID")
+# MAGIC         except TypeError:   # older SDK without query_type → semantic search
+# MAGIC             res = self.w.vector_search_indexes.query_index(**kwargs)
+# MAGIC         names = [c.name for c in res.manifest.columns]
+# MAGIC         rows = [dict(zip(names, r)) for r in ((res.result.data_array if res.result else None) or [])]
+# MAGIC         for r in rows:   # numeric columns can come back as floats/strings ("2024.0")
+# MAGIC             for k in ("doc_year", "page_start", "page_end"):
+# MAGIC                 try:
+# MAGIC                     r[k] = int(float(r[k]))
+# MAGIC                 except (TypeError, ValueError, KeyError):
+# MAGIC                     pass
+# MAGIC         if country:
+# MAGIC             rows = [r for r in rows if self._matches_country(r, country)]
+# MAGIC         return rows[:SEARCH_RESULTS]
 # MAGIC
 # MAGIC     @staticmethod
 # MAGIC     def _register_passages(rows: list[dict], ctx: dict) -> list[dict]:

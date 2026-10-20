@@ -47,8 +47,15 @@ except KeyError:
 DATA_TOOLS = [f"{CATALOG}.ai.{n}" for n in ("list_indicators", "get_indicator", "compare_countries", "get_country_profile")]
 RESEARCH_TOOLS = [f"{CATALOG}.ai.search_reports"]
 
+VS_INDEX = f"{CATALOG}.ai.doc_chunks_index"
+
 MAX_TOOL_ROWS = 60
 MAX_PASSAGE_CHARS = 1500
+SEARCH_CANDIDATES, SEARCH_RESULTS = 60, 8
+SEARCH_COLUMNS = ["title", "country_name", "country_iso3", "region", "doc_year", "page_start", "page_end",
+                  "landing_url", "chunk_text"]
+COUNTRY_ALIASES = {"turkey": "TUR", "türkiye": "TUR", "turkiye": "TUR", "vietnam": "VNM", "egypt": "EGY",
+                   "usa": "USA", "us": "USA", "united states of america": "USA", "america": "USA"}
 
 # ── Prompts ─────────────────────────────────────────────────────────────────────────────────────
 
@@ -239,7 +246,10 @@ class WorldBankAgent(ResponsesAgent):
             span.set_inputs(args)
             try:
                 tool = self.tools[tool_name]
-                raw_rows = tool.run(self.w, args)
+                # Report search goes straight to Vector Search through the SDK: that is the path covered by the
+                # endpoint's credentials for the declared index. (The ai.search_reports SQL function stays the
+                # same search for SQL users; its description and parameters still define the tool.)
+                raw_rows = self._search_reports(args) if is_retriever else tool.run(self.w, args)
                 rows = self._register_passages(raw_rows, ctx) if is_retriever else raw_rows
                 ctx["tool_calls"].append({"agent": agent, "tool": tool.full_name, "args": args, "rows": len(rows)})
                 if is_retriever:
@@ -254,6 +264,44 @@ class WorldBankAgent(ResponsesAgent):
                 ctx["tool_calls"].append({"agent": agent, "tool": tool_name, "args": args, "error": str(e)[:300]})
                 span.set_outputs({"error": str(e)})
                 return f"Tool error: {str(e)[:300]}"
+
+    @staticmethod
+    def _matches_country(row: dict, country: str) -> bool:
+        """Same rules as the UC functions: ISO-3 exact, otherwise letters-only name/region prefix, plus aliases."""
+        def letters(s):
+            return re.sub(r"[^a-z]", "", (s or "").lower())
+        c = country.strip()
+        if (row.get("country_iso3") or "").upper() == c.upper():
+            return True
+        alias = COUNTRY_ALIASES.get(c.lower())
+        if alias and alias == row.get("country_iso3"):
+            return True
+        if len(c) <= 3:
+            return False
+        return any(letters(row.get(k)).startswith(letters(c)) for k in ("country_name", "region"))
+
+    def _search_reports(self, args: dict) -> list[dict]:
+        query = str(args.get("query") or "").strip()
+        country = str(args.get("country") or "").strip()
+        if country.lower() in ("null", "none"):
+            country = ""
+        kwargs = dict(index_name=VS_INDEX, columns=SEARCH_COLUMNS, num_results=SEARCH_CANDIDATES,
+                      query_text=f"{country}: {query}" if country else query)
+        try:
+            res = self.w.vector_search_indexes.query_index(**kwargs, query_type="HYBRID")
+        except TypeError:   # older SDK without query_type → semantic search
+            res = self.w.vector_search_indexes.query_index(**kwargs)
+        names = [c.name for c in res.manifest.columns]
+        rows = [dict(zip(names, r)) for r in ((res.result.data_array if res.result else None) or [])]
+        for r in rows:   # numeric columns can come back as floats/strings ("2024.0")
+            for k in ("doc_year", "page_start", "page_end"):
+                try:
+                    r[k] = int(float(r[k]))
+                except (TypeError, ValueError, KeyError):
+                    pass
+        if country:
+            rows = [r for r in rows if self._matches_country(r, country)]
+        return rows[:SEARCH_RESULTS]
 
     @staticmethod
     def _register_passages(rows: list[dict], ctx: dict) -> list[dict]:
