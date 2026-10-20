@@ -105,6 +105,7 @@ notebooks/   Databricks notebooks, run in order (source format, import into a wo
   13_create_job                Lakeflow Job with the evaluation gate
   14_monitoring                monitoring views and dashboard
   15_audit                     groups, grants, audit and lineage views
+  16_update_agent              ship an agent code change in one run (08 -> 09 -> promote -> 11)
 src/         agent source and the script that builds notebooks 08 and 12
 app/         Streamlit chat app (Databricks App)
 sql/         analytics queries for the SQL editor
