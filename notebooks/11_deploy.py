@@ -83,7 +83,8 @@ else:
         endpoint_name=ENDPOINT_NAME,
         scale_to_zero=SCALE_TO_ZERO,
         workload_size="Small",
-        tags={"project": "wb_demo", "model_version": str(VERSION)},
+        # no per-version tag: changing a tag value on update makes agents.deploy add and delete the same key (rejected)
+        tags={"project": "wb_demo"},
         description="World Bank multi-agent assistant (supervisor + data analyst + research).",
     )
     print("Deployment requested:", deployment.endpoint_name)
