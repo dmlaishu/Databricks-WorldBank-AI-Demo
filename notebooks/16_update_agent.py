@@ -29,7 +29,11 @@ from databricks.sdk import WorkspaceClient
 
 MODEL = "wb_demo.ai.worldbank_agent"
 w = WorkspaceClient()
-aliases = {a.alias_name: a.version_num for a in (w.registered_models.get(MODEL, include_aliases=True).aliases or [])}
+try:
+    info = w.registered_models.get(MODEL, include_aliases=True)
+except TypeError:   # older SDK on serverless doesn't take include_aliases (aliases are returned by default)
+    info = w.registered_models.get(MODEL)
+aliases = {a.alias_name: a.version_num for a in (info.aliases or [])}
 candidate = aliases["candidate"]
 w.registered_models.set_alias(MODEL, "champion", candidate)
 print(f"✓ {MODEL} version {candidate} → @champion (was {aliases.get('champion')})")
